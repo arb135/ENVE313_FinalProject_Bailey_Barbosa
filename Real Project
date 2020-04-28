@@ -1,0 +1,54 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from numba import jit
+# Develop a function to calculat h_new
+@jit
+def h_new(h, Node, i, j):
+    if Node[i,j] == 0: # interior node
+        h_n = ((h[i+1,j]*(2*K[i+1,j])/(K[i+1,j]+K[i-1,j])) + (h[i-1,j]*(2*K[i-1,j])/(K[i+1,j]+K[i-1,j])) + (h[i,j+1]*(2*K[i,j+1])/(K[i,j+1]+K[i,j-1])) + (h[i,j-1]*(2*K[i,j-1])/(K[i,j+1]+K[i,j-1])))/4
+    elif Node[i,j] == 1: # dirichlet node
+        h_n = h[i,j]
+    elif Node[i,j] == 21: # fixed flux left
+        h_n = (2*(h[i+1,j] + (2*dx*qx[i,j])/K[i,j]) + h[i,j+1] + h[i,j-1])/4
+    elif Node[i,j] == 22: # fixed flux right
+        h_n = (2*(h[i-1,j] - (2*dx*qx[i,j])/K[i,j]) + h[i,j+1] + h[i,j-1])/4
+    elif Node[i,j] == 23: # fixed flux bottom
+        h_n = (2*(h[i,j+1] + (2*dy*qy[i,j])/K[i,j]) + h[i+1,j] + h[i-1,j])/4
+    elif Node[i,j] == 24: # fixed flux top
+        h_n = (2*(h[i,j-1] - (2*dy*qy[i,j])/K[i,j]) + h[i+1,j] + h[i-1,j])/4
+    elif Node[i,j] == 31: # corner fixed flux bottom left
+        h_n = (2*(h[i+1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j+1] + (2*dy*qy[i,j])/K[i,j]))/4
+    elif Node[i,j] == 32: # corner fixed flux top left
+        h_n = (2*(h[i+1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j-1] - (2*dy*qy[i,j])/K[i,j]))/4
+    elif Node[i,j] == 33: # corner fixed flux bottom right
+        h_n = (2*(h[i-1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j+1] + (2*dy*qy[i,j])/K[i,j]))/4
+    elif Node[i,j] == 34: # corner fixed flux top right
+        h_n = (2*(h[i-1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j-1] - (2*dy*qy[i,j])/K[i,j]))/4
+    else:
+        h_n = np.nan
+    return h_n
+
+##########################################################
+
+# Gauss Seidel Solver
+@jit
+def GaussSeidel(h, Node, tol, max_iters = 100000):
+    err = tol + 1
+    iters = 0
+    lam = 1.8
+    Nx, Ny = np.shape(h)
+    while err > tol and iters < max_iters:
+        err = 0
+        iters += 1
+        for j in range(Ny): # loop over all y's
+            for i in range(Nx): # loop over all x's
+                h_o = h[i,j]
+                h_n = h_new(h, Node, i, j)
+                h_n = lam*h_n + (1-lam)*h_o
+                err = max(err, abs(h_n - h_o))
+                h[i,j] = h_n
+    if iters < max_iters:
+        return h
+    else:
+        print("max iterations reached")
