@@ -1,0 +1,130 @@
+### FINAL PROJECT ###
+# ENVE 313, Modeling and Simulation, Dr. Joel Bandstra
+# Grace Bailey and Andres Barbosa
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from numba import jit
+# Develop a function to calculat h_new
+@jit
+def h_new(h, Node, i, j):
+    if Node[i,j] == 0: # interior node
+        h_n = ((h[i+1,j]*(2*K[i+1,j])/(K[i+1,j]+K[i-1,j])) + (h[i-1,j]*(2*K[i-1,j])/(K[i+1,j]+K[i-1,j])) + (h[i,j+1]*(2*K[i,j+1])/(K[i,j+1]+K[i,j-1])) + (h[i,j-1]*(2*K[i,j-1])/(K[i,j+1]+K[i,j-1])))/4
+    elif Node[i,j] == 1: # dirichlet node
+        h_n = h[i,j]
+    elif Node[i,j] == 21: # fixed flux left
+        h_n = (2*(h[i+1,j] + (2*dx*qx[i,j])/K[i,j]) + h[i,j+1] + h[i,j-1])/4
+    elif Node[i,j] == 22: # fixed flux right
+        h_n = (2*(h[i-1,j] - (2*dx*qx[i,j])/K[i,j]) + h[i,j+1] + h[i,j-1])/4
+    elif Node[i,j] == 23: # fixed flux bottom
+        h_n = (2*(h[i,j+1] + (2*dy*qy[i,j])/K[i,j]) + h[i+1,j] + h[i-1,j])/4
+    elif Node[i,j] == 24: # fixed flux top
+        h_n = (2*(h[i,j-1] - (2*dy*qy[i,j])/K[i,j]) + h[i+1,j] + h[i-1,j])/4
+    elif Node[i,j] == 31: # corner fixed flux bottom left
+        h_n = (2*(h[i+1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j+1] + (2*dy*qy[i,j])/K[i,j]))/4
+    elif Node[i,j] == 32: # corner fixed flux top left
+        h_n = (2*(h[i+1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j-1] - (2*dy*qy[i,j])/K[i,j]))/4
+    elif Node[i,j] == 33: # corner fixed flux bottom right
+        h_n = (2*(h[i-1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j+1] + (2*dy*qy[i,j])/K[i,j]))/4
+    elif Node[i,j] == 34: # corner fixed flux top right
+        h_n = (2*(h[i-1,j] + (2*dx*qx[i,j])/K[i,j]) + 2*(h[i,j-1] - (2*dy*qy[i,j])/K[i,j]))/4
+    else:
+        h_n = np.nan
+    return h_n
+
+##########################################################
+
+# Gauss Seidel Solver
+@jit
+def GaussSeidel(h, Node, tol, max_iters = 100000):
+    err = tol + 1
+    iters = 0
+    lam = 1.8
+    Nx, Ny = np.shape(h)
+    while err > tol and iters < max_iters:
+        err = 0
+        iters += 1
+        for j in range(Ny): # loop over all y's
+            for i in range(Nx): # loop over all x's
+                h_o = h[i,j]
+                h_n = h_new(h, Node, i, j)
+                h_n = lam*h_n + (1-lam)*h_o
+                err = max(err, abs(h_n - h_o))
+                h[i,j] = h_n
+    if iters < max_iters:
+        return h
+    else:
+        print("max iterations reached")
+        
+### USER Input the distance between data points #######
+    #Units do not need to be cm but should be consistent throughout program
+gridSize = float(input("Input distance between data points"))
+
+######################
+
+dx= gridSize
+dy = gridSize
+
+##### USER INPUT #####
+### input dimensions of region
+
+x = float(input("Input distance in the x direction")) #cm
+y = float(input("Input distance in the y direction")) #cm
+
+#####################
+
+xs = int((x/gridSize) + 1)
+ys = int((y/gridSize) + 1)
+cols = [0]*xs
+for i in range (0,xs):
+    cols[i] = i+1
+
+# set node array
+Node = np.zeros( (xs, ys), dtype = int )
+qx = np.zeros((xs,ys))
+qy = np.zeros((xs,ys))
+h = np.ones_like(Node, dtype = float)*100
+
+filename = str(input("Copy file path here, make sure to include the excel sheet name (also use forward slashes)"))    
+Kdat = pd.read_excel( filename,sheet_name='K', usecols = cols, skiprows =0, convert_float = False)
+qxdat = pd.read_excel( filename,sheet_name='qx', usecols = cols, skiprows =0, convert_float = False)
+qydat = pd.read_excel( filename,sheet_name='qy', usecols = cols, skiprows =0, convert_float = False)
+hdat = pd.read_excel( filename,sheet_name='h', usecols = cols, skiprows =0, convert_float = False)
+
+K = np.array(Kdat)
+qx = np.array(qxdat)
+qy = np.array(qydat)
+h = np.array(hdat)
+
+#### USER INPUT #####
+
+#set Node values
+Node[0,:] = 1 #dirclet
+Node[:,0] = 23 #fixed flux along the bottom
+Node[:,-1] = 24 #fixed flux top 
+Node[-1,:] = 22 # fixed flux right
+
+
+####  Define the boundary of a possible no flux region ####
+#area of no flux
+Node[42:56,-33] = 23 #fixed flux bottom (top of box)
+Node[42:56,-66] =  24 #fixed flux top (bottom of box)
+Node[42,-33:-66] = 22 #fixed flux right (left side of box)
+Node[56,-33:-66] = 21 #fixed flux left (right side of box)
+
+Node[42,-33] = 33 #fixed flux bottom right (top left of box)
+Node[56,-33] = 31 #fixed flux bottom left (top right of box)
+Node[42,-66] = 34 #fixed flux top right (bottom left of box)
+Node[56,-66] = 32 #fixed flux top left (bottom right of box)
+
+Node[43:55,-34:-65] = 1 #dirchlet inside no flux zone
+
+##########################################################
+
+tol = float(input("Input desired tolerance"))
+
+# run Gauss Seidel
+h = GaussSeidel(h, Node, tol)
+plt.matshow(np.transpose(h), origin = 'lower')
+plt.colorbar()
